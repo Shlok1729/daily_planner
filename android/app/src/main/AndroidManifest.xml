@@ -1,0 +1,431 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- ================================ -->
+    <!-- APP BLOCKER PERMISSIONS         -->
+    <!-- ================================ -->
+
+    <!-- Usage Stats Permission - Required to monitor app usage -->
+    <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS"
+        tools:ignore="ProtectedPermissions" />
+
+    <!-- System Alert Window - Required to show blocking overlay -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+
+    <!-- Notification Permission - Required for focus mode notifications -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- Foreground Service - Required for background app monitoring -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+
+    <!-- Wake Lock - Keep service running -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
+    <!-- Boot Completed - Start service on device boot -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <!-- Query All Packages - Required to get installed apps list -->
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
+        tools:ignore="QueryAllPackagesPermission" />
+
+    <!-- ================================ -->
+    <!-- GENERAL APP PERMISSIONS         -->
+    <!-- ================================ -->
+
+    <!-- Internet - Required for API calls and Supabase -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- Network State - Check internet connectivity -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <!-- Vibration - For notifications and alerts -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+
+    <!-- Device Admin - For advanced app blocking (optional) -->
+    <uses-permission android:name="android.permission.BIND_DEVICE_ADMIN" />
+
+    <!-- Accessibility Service - For app monitoring (optional) -->
+    <uses-permission android:name="android.permission.BIND_ACCESSIBILITY_SERVICE" />
+
+    <!-- External Storage - For backup and data export -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+
+    <!-- Media Permissions for Android 13+ -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
+
+    <application
+        android:label="Daily Planner"
+        android:name="${applicationName}"
+        android:icon="@mipmap/ic_launcher"
+        android:enableOnBackInvokedCallback="true"
+        android:requestLegacyExternalStorage="true"
+        android:allowBackup="true"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
+        android:theme="@style/AppTheme"
+        android:hardwareAccelerated="true"
+        android:largeHeap="true">
+
+        <!-- ================================ -->
+        <!-- MAIN ACTIVITY                    -->
+        <!-- ================================ -->
+
+        <activity
+            android:name="com.example.daily_planner.MainActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:taskAffinity=""
+            android:theme="@style/LaunchTheme"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+            android:hardwareAccelerated="true"
+            android:windowSoftInputMode="adjustResize"
+            android:enableOnBackInvokedCallback="true"
+            android:screenOrientation="portrait">
+
+            <!-- Specifies an Android theme to apply to this Activity as soon as
+                 the Android process has started. This theme is visible to the user
+                 while the Flutter UI initializes. After that, this theme continues
+                 to determine the Window background behind the Flutter UI. -->
+            <meta-data
+                android:name="io.flutter.embedding.android.NormalTheme"
+                android:resource="@style/NormalTheme" />
+
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+
+            <!-- Deep Link Support for Focus Mode -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="dailyplanner"
+                    android:host="focus" />
+            </intent-filter>
+
+            <!-- App Shortcut Support -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
+        <!-- ================================ -->
+        <!-- FOCUS LOCK ACTIVITY              -->
+        <!-- ================================ -->
+
+        <!-- Activity shown when apps are blocked -->
+        <activity
+            android:name="com.example.daily_planner.FocusLockActivity"
+            android:exported="false"
+            android:theme="@style/FocusLockTheme"
+            android:launchMode="singleTask"
+            android:excludeFromRecents="true"
+            android:taskAffinity=""
+            android:screenOrientation="fullSensor"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode">
+
+            <intent-filter>
+                <action android:name="com.example.daily_planner.SHOW_FOCUS_LOCK" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
+        <!-- ================================ -->
+        <!-- APP BLOCKER SERVICES             -->
+        <!-- ================================ -->
+
+        <!-- Background Service for App Monitoring -->
+        <service
+            android:name="com.example.daily_planner.AppBlockerService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="specialUse"
+            android:stopWithTask="false">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="productivity_focus_mode" />
+        </service>
+
+        <!-- Focus Mode Foreground Service -->
+        <service
+            android:name="com.example.daily_planner.FocusModeService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="specialUse"
+            android:stopWithTask="false">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="focus_session_timer" />
+        </service>
+
+        <!-- App Usage Monitoring Service -->
+        <service
+            android:name="com.example.daily_planner.AppUsageMonitorService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="dataSync">
+        </service>
+
+        <!-- Accessibility Service for App Blocking -->
+        <service
+            android:name="com.example.daily_planner.AppBlockerAccessibilityService"
+            android:enabled="true"
+            android:exported="false"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_service_config" />
+        </service>
+
+        <!-- Device Admin Receiver for Advanced Blocking -->
+        <receiver
+            android:name="com.example.daily_planner.AppBlockerDeviceAdminReceiver"
+            android:permission="android.permission.BIND_DEVICE_ADMIN"
+            android:exported="true">
+            <meta-data
+                android:name="android.app.device_admin"
+                android:resource="@xml/device_admin" />
+            <intent-filter>
+                <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- ================================ -->
+        <!-- BROADCAST RECEIVERS              -->
+        <!-- ================================ -->
+
+        <!-- Boot Receiver to start service on device boot -->
+        <receiver
+            android:name="com.example.daily_planner.BootReceiver"
+            android:enabled="true"
+            android:exported="true"
+            android:directBootAware="true">
+            <intent-filter android:priority="1000">
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.intent.action.PACKAGE_REPLACED" />
+                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+                <data android:scheme="package" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Screen State Receiver for Focus Mode -->
+        <receiver
+            android:name="com.example.daily_planner.ScreenStateReceiver"
+            android:enabled="true"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.SCREEN_ON" />
+                <action android:name="android.intent.action.SCREEN_OFF" />
+                <action android:name="android.intent.action.USER_PRESENT" />
+            </intent-filter>
+        </receiver>
+
+        <!-- App Launch Receiver -->
+        <receiver
+            android:name="com.example.daily_planner.AppLaunchReceiver"
+            android:enabled="true"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.PACKAGE_ADDED" />
+                <action android:name="android.intent.action.PACKAGE_REMOVED" />
+                <data android:scheme="package" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Notification Action Receiver -->
+        <receiver
+            android:name="com.example.daily_planner.NotificationActionReceiver"
+            android:enabled="true"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.example.daily_planner.ACTION_PAUSE_FOCUS" />
+                <action android:name="com.example.daily_planner.ACTION_RESUME_FOCUS" />
+                <action android:name="com.example.daily_planner.ACTION_END_FOCUS" />
+                <action android:name="com.example.daily_planner.ACTION_EXTEND_FOCUS" />
+            </intent-filter>
+        </receiver>
+
+        <!-- ================================ -->
+        <!-- CONTENT PROVIDERS                -->
+        <!-- ================================ -->
+
+        <!-- File Provider for sharing data -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="com.example.daily_planner.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_provider_paths" />
+        </provider>
+
+        <!-- ================================ -->
+        <!-- FLUTTER CONFIGURATION           -->
+        <!-- ================================ -->
+
+        <!-- Don't delete the meta-data below.
+             This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
+        <meta-data
+            android:name="flutterEmbedding"
+            android:value="2" />
+
+        <!-- ================================ -->
+        <!-- NOTIFICATION CHANNELS            -->
+        <!-- ================================ -->
+
+        <!-- Focus Mode Notification Channel -->
+        <meta-data
+            android:name="com.example.daily_planner.FOCUS_NOTIFICATION_CHANNEL"
+            android:value="focus_mode_channel" />
+
+        <!-- App Blocking Notification Channel -->
+        <meta-data
+            android:name="com.example.daily_planner.BLOCKING_NOTIFICATION_CHANNEL"
+            android:value="app_blocking_channel" />
+
+        <!-- Task Reminder Notification Channel -->
+        <meta-data
+            android:name="com.example.daily_planner.REMINDER_NOTIFICATION_CHANNEL"
+            android:value="task_reminder_channel" />
+
+        <!-- Productivity Stats Notification Channel -->
+        <meta-data
+            android:name="com.example.daily_planner.STATS_NOTIFICATION_CHANNEL"
+            android:value="productivity_stats_channel" />
+
+        <!-- ================================ -->
+        <!-- APP SHORTCUTS                    -->
+        <!-- ================================ -->
+
+        <!-- App Shortcuts for Quick Actions -->
+        <meta-data
+            android:name="android.app.shortcuts"
+            android:resource="@xml/shortcuts" />
+
+        <!-- ================================ -->
+        <!-- SUPABASE CONFIGURATION           -->
+        <!-- ================================ -->
+
+        <!-- NO Firebase - using Supabase instead -->
+
+        <!-- ================================ -->
+        <!-- PERFORMANCE & SECURITY           -->
+        <!-- ================================ -->
+
+        <!-- Network Security Config -->
+        <meta-data
+            android:name="android.security.NetworkSecurityConfig"
+            android:resource="@xml/network_security_config" />
+
+        <!-- App Integrity -->
+        <meta-data
+            android:name="com.google.android.play.billingclient.version"
+            android:value="5.0.0" />
+
+    </application>
+
+    <!-- ================================ -->
+    <!-- PACKAGE QUERIES                  -->
+    <!-- ================================ -->
+
+    <!-- Required to query activities that can process text, see:
+         https://developer.android.com/training/package-visibility and
+         https://developer.android.com/reference/android/content/Intent#ACTION_PROCESS_TEXT.
+
+         In particular, this is used by the Flutter engine in io.flutter.plugin.text.ProcessTextPlugin. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.PROCESS_TEXT"/>
+            <data android:mimeType="text/plain"/>
+        </intent>
+
+        <!-- Query for getting list of installed applications -->
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+        </intent>
+
+        <!-- Query for launching apps -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+        </intent>
+
+        <!-- Query for app settings -->
+        <intent>
+            <action android:name="android.settings.APPLICATION_DETAILS_SETTINGS" />
+        </intent>
+
+        <!-- Query for usage access settings -->
+        <intent>
+            <action android:name="android.settings.USAGE_ACCESS_SETTINGS" />
+        </intent>
+
+        <!-- Query for overlay permission settings -->
+        <intent>
+            <action android:name="android.settings.action.MANAGE_OVERLAY_PERMISSION" />
+        </intent>
+
+        <!-- Query for notification settings -->
+        <intent>
+            <action android:name="android.settings.APP_NOTIFICATION_SETTINGS" />
+        </intent>
+
+        <!-- Query for device admin settings -->
+        <intent>
+            <action android:name="android.settings.DEVICE_ADMIN_SETTINGS" />
+        </intent>
+
+        <!-- Query for accessibility settings -->
+        <intent>
+            <action android:name="android.settings.ACCESSIBILITY_SETTINGS" />
+        </intent>
+
+        <!-- Query for battery optimization -->
+        <intent>
+            <action android:name="android.settings.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+        </intent>
+
+        <!-- Query for social media apps -->
+        <package android:name="com.instagram.android" />
+        <package android:name="com.facebook.katana" />
+        <package android:name="com.twitter.android" />
+        <package android:name="com.zhiliaoapp.musically" />
+        <package android:name="com.snapchat.android" />
+        <package android:name="com.linkedin.android" />
+
+        <!-- Query for entertainment apps -->
+        <package android:name="com.google.android.youtube" />
+        <package android:name="com.netflix.mediaclient" />
+        <package android:name="com.disney.disneyplus" />
+        <package android:name="com.spotify.music" />
+        <package android:name="tv.twitch.android.app" />
+
+        <!-- Query for messaging apps -->
+        <package android:name="com.whatsapp" />
+        <package android:name="org.telegram.messenger" />
+        <package android:name="com.discord" />
+        <package android:name="com.facebook.orca" />
+
+        <!-- Query for gaming apps -->
+        <package android:name="com.tencent.ig" />
+        <package android:name="com.innersloth.spacemafia" />
+        <package android:name="com.king.candycrushsaga" />
+        <package android:name="com.supercell.clashroyale" />
+        <package android:name="com.nianticlabs.pokemongo" />
+
+    </queries>
+
+</manifest>

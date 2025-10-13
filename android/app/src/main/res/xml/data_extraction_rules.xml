@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Data extraction rules for Android 12+ (API 31+)
+  Controls what data can be extracted from app backups
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <!-- Allow backup for general app data -->
+        <include domain="file" path="." />
+        <include domain="sharedpref" path="." />
+
+        <!-- Exclude sensitive directories -->
+        <exclude domain="database" />
+        <exclude domain="file" path="sensitive/" />
+        <exclude domain="file" path="auth/" />
+    </cloud-backup>
+
+    <device-transfer>
+        <!-- Allow device transfer for most data -->
+        <include domain="file" path="." />
+        <include domain="database" />
+        <include domain="sharedpref" path="." />
+
+        <!-- Exclude sensitive authentication data -->
+        <exclude domain="file" path="auth/" />
+    </device-transfer>
+</data-extraction-rules>

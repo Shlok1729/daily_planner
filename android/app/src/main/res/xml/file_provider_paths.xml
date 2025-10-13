@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  File provider paths configuration
+  Defines which directories can be shared with other apps
+-->
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Internal storage -->
+    <files-path name="internal_files" path="." />
+
+    <!-- Cache directory -->
+    <cache-path name="cache_files" path="." />
+
+    <!-- External storage -->
+    <external-path name="external_files" path="." />
+
+    <!-- External cache -->
+    <external-cache-path name="external_cache" path="." />
+
+    <!-- Shared exports directory -->
+    <files-path name="exports" path="exports/" />
+
+    <!-- Backup files -->
+    <files-path name="backups" path="backups/" />
+
+    <!-- Temp files for sharing -->
+    <cache-path name="temp" path="temp/" />
+</paths>

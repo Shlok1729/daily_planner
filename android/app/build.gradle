@@ -1,0 +1,145 @@
+plugins {
+    id "com.android.application"
+    id "kotlin-android"
+    // This is the correct, modern way to apply the Flutter plugin.
+    id "dev.flutter.flutter-gradle-plugin"
+    id 'com.google.gms.google-services'
+}
+
+def localProperties = new Properties()
+def localPropertiesFile = rootProject.file('local.properties')
+if (localPropertiesFile.exists()) {
+    localPropertiesFile.withReader('UTF-8') { reader ->
+        localProperties.load(reader)
+    }
+}
+
+
+def flutterVersionCode = localProperties.getProperty('flutter.versionCode')
+if (flutterVersionCode == null) {
+    flutterVersionCode = '1'
+}
+
+def flutterVersionName = localProperties.getProperty('flutter.versionName')
+if (flutterVersionName == null) {
+    flutterVersionName = '1.0'
+}
+
+android {
+    namespace 'com.example.daily_planner'
+    compileSdkVersion flutter.compileSdkVersion
+    ndkVersion flutter.ndkVersion
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+        coreLibraryDesugaringEnabled true
+    }
+
+    kotlinOptions {
+        jvmTarget = '1.8'
+    }
+
+    sourceSets {
+        main.java.srcDirs += 'src/main/kotlin'
+    }
+
+    defaultConfig {
+        applicationId "com.example.daily_planner"
+        minSdkVersion flutter.minSdkVersion
+        targetSdkVersion flutter.targetSdkVersion
+        versionCode flutterVersionCode.toInteger()
+        versionName flutterVersionName
+        multiDexEnabled true
+        vectorDrawables.useSupportLibrary = true
+    }
+
+    signingConfigs {
+        release {
+            // Add your keystore configuration here for production
+        }
+    }
+
+    buildTypes {
+        debug {
+            // REMOVED: applicationIdSuffix '.debug' - causes Google Services mismatch
+            debuggable true
+            minifyEnabled false
+            shrinkResources false
+        }
+
+        release {
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            signingConfig signingConfigs.debug // Change to release for production
+        }
+
+        profile {
+            initWith release
+            debuggable false
+            minifyEnabled true
+            shrinkResources true
+            signingConfig signingConfigs.debug
+        }
+    }
+
+    lint {
+        disable 'InvalidPackage'
+        checkReleaseBuilds false
+    }
+
+    packagingOptions {
+        resources {
+            excludes += [
+                    'META-INF/DEPENDENCIES',
+                    'META-INF/LICENSE',
+                    'META-INF/LICENSE.txt',
+                    'META-INF/license.txt',
+                    'META-INF/NOTICE',
+                    'META-INF/NOTICE.txt',
+                    'META-INF/notice.txt',
+                    'META-INF/ASL2.0',
+                    'META-INF/*.kotlin_module'
+            ]
+        }
+    }
+}
+
+flutter {
+    source '../..'
+}
+
+dependencies {
+    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:$kotlin_version"
+    implementation 'androidx.multidex:multidex:2.0.1'
+
+    // CRITICAL: AndroidX Core dependencies - REQUIRED for NotificationCompat and core references
+    // These are essential for your MainActivity.kt and AppBlockerPlugin.kt files
+    implementation 'androidx.core:core:1.13.1'
+    implementation 'androidx.core:core-ktx:1.13.1'
+    implementation 'androidx.appcompat:appcompat:1.7.0'
+    implementation 'androidx.annotation:annotation:1.8.0'
+
+    // Google Play Services for OAuth (Google Sign-In only)
+    implementation 'com.google.android.gms:play-services-auth:21.4.0'
+    implementation 'com.google.android.gms:play-services-base:18.7.2'
+
+    // Facebook SDK for OAuth
+    implementation 'com.facebook.android:facebook-android-sdk:17.0.1'
+
+    // Work Manager and Lifecycle
+    implementation 'androidx.work:work-runtime:2.9.0'
+    implementation 'androidx.lifecycle:lifecycle-service:2.8.0'
+    implementation 'androidx.preference:preference:1.2.1'
+
+    // Core library desugaring
+    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.0.4'
+
+    // Testing dependencies
+    testImplementation 'junit:junit:4.13.2'
+    androidTestImplementation 'androidx.test.ext:junit:1.2.1'
+    androidTestImplementation 'androidx.test.espresso:espresso-core:3.6.1'
+}
+
+apply plugin: 'com.google.gms.google-services'

@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="start_focus"
+        android:enabled="true"
+        android:shortcutShortLabel="@string/shortcut_focus_short"
+        android:shortcutLongLabel="@string/shortcut_focus_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.example.daily_planner"
+            android:targetClass="com.example.daily_planner.MainActivity"
+            android:data="dailyplanner://focus/start" />
+        <categories android:name="android.shortcut.conversation" />
+    </shortcut>
+
+    <shortcut
+        android:shortcutId="add_task"
+        android:enabled="true"
+        android:shortcutShortLabel="@string/shortcut_task_short"
+        android:shortcutLongLabel="@string/shortcut_task_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.example.daily_planner"
+            android:targetClass="com.example.daily_planner.MainActivity"
+            android:data="dailyplanner://tasks/add" />
+        <categories android:name="android.shortcut.conversation" />
+    </shortcut>
+
+    <shortcut
+        android:shortcutId="view_stats"
+        android:enabled="true"
+        android:shortcutShortLabel="@string/shortcut_stats_short"
+        android:shortcutLongLabel="@string/shortcut_stats_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.example.daily_planner"
+            android:targetClass="com.example.daily_planner.MainActivity"
+            android:data="dailyplanner://analytics" />
+        <categories android:name="android.shortcut.conversation" />
+    </shortcut>
+
+    <shortcut
+        android:shortcutId="app_blocker"
+        android:enabled="true"
+        android:shortcutShortLabel="@string/shortcut_blocker_short"
+        android:shortcutLongLabel="@string/shortcut_blocker_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.example.daily_planner"
+            android:targetClass="com.example.daily_planner.MainActivity"
+            android:data="dailyplanner://blocker" />
+        <categories android:name="android.shortcut.conversation" />
+    </shortcut>
+</shortcuts>

@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Base application theme. -->
+    <style name="LaunchTheme" parent="@android:style/Theme.Light.NoTitleBar">
+        <!-- Show a splash screen on the activity. Automatically removed when
+             the Flutter engine draws its first frame -->
+        <item name="android:windowBackground">@drawable/launch_background</item>
+    </style>
+
+    <!-- Normal theme after app loads -->
+    <style name="NormalTheme" parent="@android:style/Theme.Light.NoTitleBar">
+        <item name="android:windowBackground">?android:colorBackground</item>
+    </style>
+
+    <!-- Main app theme -->
+    <style name="AppTheme" parent="Theme.AppCompat.Light.NoActionBar">
+        <item name="colorPrimary">#6366F1</item>
+        <item name="colorPrimaryDark">#4F46E5</item>
+        <item name="colorAccent">#8B5CF6</item>
+        <item name="android:windowBackground">@android:color/white</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:navigationBarColor">@android:color/white</item>
+        <item name="android:windowLightNavigationBar">true</item>
+    </style>
+
+    <!-- Focus lock theme for blocking screen -->
+    <style name="FocusLockTheme" parent="Theme.AppCompat.Light.NoActionBar">
+        <item name="colorPrimary">#EF4444</item>
+        <item name="colorPrimaryDark">#DC2626</item>
+        <item name="colorAccent">#F87171</item>
+        <item name="android:windowBackground">#1A1A2E</item>
+        <item name="android:statusBarColor">#1A1A2E</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:navigationBarColor">#1A1A2E</item>
+        <item name="android:windowLightNavigationBar">false</item>
+        <item name="android:windowFullscreen">true</item>
+        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
+    </style>
+</resources>

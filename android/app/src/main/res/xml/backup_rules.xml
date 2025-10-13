@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Backup rules for Android 6.0+ (API 23+)
+  Controls what data is included in auto backup
+-->
+<full-backup-content>
+    <!-- Include general app data -->
+    <include domain="file" path="." />
+    <include domain="database" />
+    <include domain="sharedpref" path="." />
+
+    <!-- Exclude sensitive data from backup -->
+    <exclude domain="database" path="sensitive.db" />
+    <exclude domain="file" path="auth/" />
+    <exclude domain="file" path="cache/" />
+    <exclude domain="file" path="temp/" />
+
+    <!-- Exclude large files that shouldn't be backed up -->
+    <exclude domain="file" path="downloads/" />
+    <exclude domain="file" path="exports/" />
+</full-backup-content>

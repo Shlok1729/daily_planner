@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Enhanced splash screen background for Daily Planner app -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Gradient background (soft and modern) -->
+    <item>
+        <shape android:shape="rectangle">
+            <gradient
+                android:startColor="#F6F8FC"
+                android:endColor="#E0E7FF"
+                android:angle="270" />
+        </shape>
+    </item>
+
+    <!-- Optional background decoration (like a subtle icon watermark) -->
+    <!-- <item>
+        <bitmap
+            android:src="@drawable/splash_pattern"
+            android:gravity="center"
+            android:alpha="50" />
+    </item> -->
+
+    <!-- Centered app icon/logo -->
+    <item>
+        <bitmap
+            android:gravity="center"
+            android:src="@mipmap/ic_launcher" />
+    </item>
+
+</layer-list>
