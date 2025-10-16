@@ -62,7 +62,7 @@ dependencies:
   # ================================
 
   # Device Apps - Get installed apps list
-  device_apps: ^2.2.0
+  installed_apps: 2.0.0
 
   # App Usage Monitoring - RE-ENABLED WITH FALLBACK
   app_usage: ^4.0.1

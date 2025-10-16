@@ -6,19 +6,15 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:daily_planner/models/blocked_app.dart';
 import 'package:daily_planner/utils/error_handler.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:installed_apps/installed_apps.dart';
+import 'package:installed_apps/app_info.dart';
 
 // ============================================================================
 // ENUMS AND CONSTANTS
 // ============================================================================
 
 /// Message theme types for blocking notifications
-enum MessageTheme {
-  motivational,
-  humorous,
-  challenging,
-  supportive,
-  funny,
-}
+enum MessageTheme { motivational, humorous, challenging, supportive, funny }
 
 // ============================================================================
 // BLOCK MESSAGE DATA CLASS
@@ -93,16 +89,17 @@ class BlockMessage {
 // DEVICE APP DATA CLASS (ENHANCED FOR REAL APPS)
 // ============================================================================
 
-/// Represents an app installed on the device
+/// Represents an app installed on the device (compatible with installed_apps)
 class DeviceApp {
   final String name;
   final String packageName;
-  final String icon;
+  final String icon; // base64 image string (from AppInfo.icon)
   final String category;
   final bool isSystemApp;
   final bool isBlocked;
   final bool isLaunchable;
-  final int installTime;
+  final int
+  installTime; // installed_apps does not provide installTime, default to 0
 
   const DeviceApp({
     required this.name,
@@ -111,10 +108,26 @@ class DeviceApp {
     required this.category,
     this.isSystemApp = false,
     this.isBlocked = false,
-    this.isLaunchable = false,
+    this.isLaunchable = true,
     this.installTime = 0,
   });
 
+  /// Creates a DeviceApp instance from installed_apps AppInfo
+  factory DeviceApp.fromAppInfo(AppInfo app) {
+    return DeviceApp(
+      name: app.name,
+      packageName: app.packageName,
+      icon: (app.icon is String) ? app.icon as String : '📱',
+      // fall back to emoji if icon is null
+      category: 'Other',
+      isSystemApp: app.isSystemApp,
+      isBlocked: false,
+      isLaunchable: true,
+      installTime: 0, // AppInfo does not provide install time
+    );
+  }
+
+  /// Creates a DeviceApp instance from JSON map
   factory DeviceApp.fromJson(Map<String, dynamic> json) {
     return DeviceApp(
       name: json['name'] ?? '',
@@ -123,11 +136,12 @@ class DeviceApp {
       category: json['category'] ?? 'Other',
       isSystemApp: json['isSystemApp'] ?? false,
       isBlocked: json['isBlocked'] ?? false,
-      isLaunchable: json['isLaunchable'] ?? false,
+      isLaunchable: json['isLaunchable'] ?? true,
       installTime: json['installTime'] ?? 0,
     );
   }
 
+  /// Converts DeviceApp instance to JSON map
   Map<String, dynamic> toJson() {
     return {
       'name': name,
@@ -141,6 +155,7 @@ class DeviceApp {
     };
   }
 
+  /// Returns a copy of this DeviceApp with updated fields
   DeviceApp copyWith({
     String? name,
     String? packageName,
@@ -201,13 +216,16 @@ extension StringExtensions on String {
 /// Service that handles app blocking functionality with real permissions
 /// FIXED: Now loads real device apps and handles permissions properly
 class AppBlockerService {
-  static const MethodChannel _channel = MethodChannel('com.example.daily_planner/app_blocker');
+  static const MethodChannel _channel = MethodChannel(
+    'com.example.daily_planner/app_blocker',
+  );
 
   // Hive boxes for data persistence
   Box<BlockedApp>? _appsBox;
   Box<Map<dynamic, dynamic>>? _statsBox;
   Box<Map<dynamic, dynamic>>? _settingsBox;
   Box<Map<dynamic, dynamic>>? _deviceAppsBox;
+  Box<Map<dynamic, dynamic>>? _installedAppsBox;
 
   // In-memory state
   List<BlockedApp> _blockedApps = [];
@@ -252,7 +270,8 @@ class AppBlockerService {
 
   /// Check if all critical permissions are granted
   bool get hasRequiredPermissions {
-    return _permissionStatus['usageStats'] == true && _permissionStatus['overlay'] == true;
+    return _permissionStatus['usageStats'] == true &&
+        _permissionStatus['overlay'] == true;
   }
 
   /// Check if app blocking is supported on this device
@@ -266,7 +285,9 @@ class AppBlockerService {
     final expiryTime = _settings['emergencyOverrideExpiry'];
     if (expiryTime == null) return false;
 
-    return DateTime.now().isBefore(DateTime.fromMillisecondsSinceEpoch(expiryTime));
+    return DateTime.now().isBefore(
+      DateTime.fromMillisecondsSinceEpoch(expiryTime),
+    );
   }
 
   // ============================================================================
@@ -306,9 +327,15 @@ class AppBlockerService {
   Future<void> _initializeHiveBoxes() async {
     try {
       _appsBox = await Hive.openBox<BlockedApp>('blocked_apps');
-      _statsBox = await Hive.openBox<Map<dynamic, dynamic>>('app_blocker_stats');
-      _settingsBox = await Hive.openBox<Map<dynamic, dynamic>>('app_blocker_settings');
-      _deviceAppsBox = await Hive.openBox<Map<dynamic, dynamic>>('device_apps_cache');
+      _statsBox = await Hive.openBox<Map<dynamic, dynamic>>(
+        'app_blocker_stats',
+      );
+      _settingsBox = await Hive.openBox<Map<dynamic, dynamic>>(
+        'app_blocker_settings',
+      );
+      _installedAppsBox = await Hive.openBox<Map<dynamic, dynamic>>(
+        'installed_apps_cache',
+      );
     } catch (e) {
       if (kDebugMode) {
         print('❌ Failed to initialize Hive boxes: $e');
@@ -325,7 +352,7 @@ class AppBlockerService {
 
       // Load settings
       _settings = Map<String, dynamic>.from(
-          _settingsBox?.get('settings', defaultValue: <String, dynamic>{}) ?? {}
+        _settingsBox?.get('settings', defaultValue: <String, dynamic>{}) ?? {},
       );
 
       // Set default settings if not present
@@ -341,9 +368,22 @@ class AppBlockerService {
       _focusModeActive = _settings['isFocusModeActive'] ?? false;
 
       // Load today's blocked attempts
+      final cachedApps =
+          _installedAppsBox?.values
+              .map(
+                (json) => DeviceApp.fromJson(Map<String, dynamic>.from(json)),
+              )
+              .toList() ??
+          [];
+
       final today = DateTime.now().toIso8601String().split('T')[0];
-      final todayStats = _statsBox?.get('stats_$today', defaultValue: <String, dynamic>{});
-      _blockedAttempts = Map<String, int>.from(todayStats?['blockAttempts'] ?? {});
+      final todayStats = _statsBox?.get(
+        'stats_$today',
+        defaultValue: <String, dynamic>{},
+      );
+      _blockedAttempts = Map<String, int>.from(
+        todayStats?['blockAttempts'] ?? {},
+      );
 
       if (kDebugMode) {
         print('📁 Loaded ${_blockedApps.length} blocked apps');
@@ -411,14 +451,17 @@ class AppBlockerService {
       if (!Platform.isAndroid) {
         _deviceApps = _getMockDeviceApps();
         if (kDebugMode) {
-          print('🔧 Loaded ${_deviceApps.length} mock apps for non-Android platform');
+          print(
+            '🔧 Loaded ${_deviceApps.length} mock apps for non-Android platform',
+          );
         }
         return;
       }
 
       // Check cache first
-      final cacheKey = 'device_apps_${DateTime.now().day}';
-      final cachedData = _deviceAppsBox?.get(cacheKey);
+      final cacheKey = 'installed_apps_${DateTime.now().day}';
+
+      final cachedData = _installedAppsBox?.get(cacheKey);
 
       if (cachedData != null && cachedData['apps'] != null) {
         // Load from cache if it's recent (same day)
@@ -434,35 +477,40 @@ class AppBlockerService {
         return;
       }
 
-      // FIXED: Load real apps from native platform
-      final result = await _channel.invokeMethod('getInstalledApps');
-      if (result != null && result['apps'] != null && result['success'] == true) {
-        final appsList = List<Map<String, dynamic>>.from(result['apps']);
-        _deviceApps = appsList.map((app) => DeviceApp.fromJson(app)).toList();
+      // Fetch installed apps using installed_apps package
+      final apps = await InstalledApps.getInstalledApps(
+        excludeSystemApps: false,
+        excludeNonLaunchableApps: false,
+        withIcon: true,
+        packageNamePrefix: null,
+        platformType: null,
+      );
 
-        // Cache the results
-        await _deviceAppsBox?.put(cacheKey, {
-          'apps': _deviceApps.map((app) => app.toJson()).toList(),
-          'cached_at': DateTime.now().millisecondsSinceEpoch,
-          'count': _deviceApps.length,
-        });
+      _deviceApps = apps
+          .map((appInfo) => DeviceApp.fromAppInfo(appInfo))
+          .toList();
 
-        if (kDebugMode) {
-          print('📱 Loaded ${_deviceApps.length} real device apps from system');
-          print('   User apps: ${_deviceApps.where((app) => !app.isSystemApp).length}');
-          print('   Launchable apps: ${_deviceApps.where((app) => app.isLaunchable).length}');
-        }
-      } else {
-        // Fallback to mock data if native call fails
-        _deviceApps = _getMockDeviceApps();
-        if (kDebugMode) {
-          print('⚠️ Failed to load real apps, using mock data');
-        }
+      // Cache the results
+      await _installedAppsBox?.put(cacheKey, {
+        'apps': _deviceApps.map((app) => app.toJson()).toList(),
+        'cached_at': DateTime.now().millisecondsSinceEpoch,
+        'count': _deviceApps.length,
+      });
+
+      if (kDebugMode) {
+        print(
+          '📱 Loaded ${_deviceApps.length} real device apps from installed_apps package',
+        );
+        print(
+          '   User apps: ${_deviceApps.where((app) => !app.isSystemApp).length}',
+        );
+        print(
+          '   Launchable apps: ${_deviceApps.where((app) => app.isLaunchable).length}',
+        );
       }
 
       // Update blocked status based on current blocked apps
       _updateDeviceAppsBlockedStatus();
-
     } catch (e) {
       if (kDebugMode) {
         print('❌ Error loading device apps: $e');
@@ -480,7 +528,9 @@ class AppBlockerService {
       }
 
       final result = await _channel.invokeMethod('getInstalledApps');
-      if (result != null && result['apps'] != null && result['success'] == true) {
+      if (result != null &&
+          result['apps'] != null &&
+          result['success'] == true) {
         return List<Map<String, dynamic>>.from(result['apps']);
       }
 
@@ -496,40 +546,135 @@ class AppBlockerService {
   /// Update blocked status for device apps
   void _updateDeviceAppsBlockedStatus() {
     final blockedPackages = _blockedApps.map((app) => app.packageName).toSet();
-    _deviceApps = _deviceApps.map((app) =>
-        app.copyWith(isBlocked: blockedPackages.contains(app.packageName))
-    ).toList();
+    _deviceApps = _deviceApps
+        .map(
+          (app) => app.copyWith(
+            isBlocked: blockedPackages.contains(app.packageName),
+          ),
+        )
+        .toList();
   }
 
   /// Get mock device apps for testing and non-Android platforms
   List<DeviceApp> _getMockDeviceApps() {
     return [
-      DeviceApp(name: 'Instagram', packageName: 'com.instagram.android', icon: '📷', category: 'Social', isLaunchable: true),
-      DeviceApp(name: 'TikTok', packageName: 'com.zhiliaoapp.musically', icon: '🎵', category: 'Social', isLaunchable: true),
-      DeviceApp(name: 'Facebook', packageName: 'com.facebook.katana', icon: '📘', category: 'Social', isLaunchable: true),
-      DeviceApp(name: 'Twitter', packageName: 'com.twitter.android', icon: '🐦', category: 'Social', isLaunchable: true),
-      DeviceApp(name: 'YouTube', packageName: 'com.google.android.youtube', icon: '📺', category: 'Entertainment', isLaunchable: true),
-      DeviceApp(name: 'WhatsApp', packageName: 'com.whatsapp', icon: '💬', category: 'Communication', isLaunchable: true),
-      DeviceApp(name: 'Telegram', packageName: 'org.telegram.messenger', icon: '✈️', category: 'Communication', isLaunchable: true),
-      DeviceApp(name: 'Reddit', packageName: 'com.reddit.frontpage', icon: '🔶', category: 'Social', isLaunchable: true),
-      DeviceApp(name: 'Snapchat', packageName: 'com.snapchat.android', icon: '👻', category: 'Social', isLaunchable: true),
-      DeviceApp(name: 'Discord', packageName: 'com.discord', icon: '🎧', category: 'Communication', isLaunchable: true),
-      DeviceApp(name: 'Spotify', packageName: 'com.spotify.music', icon: '🎵', category: 'Entertainment', isLaunchable: true),
-      DeviceApp(name: 'Netflix', packageName: 'com.netflix.mediaclient', icon: '🎬', category: 'Entertainment', isLaunchable: true),
-      DeviceApp(name: 'Chrome', packageName: 'com.android.chrome', icon: '🌐', category: 'Productivity', isLaunchable: true),
-      DeviceApp(name: 'Gmail', packageName: 'com.google.android.gm', icon: '📧', category: 'Productivity', isLaunchable: true),
-      DeviceApp(name: 'Maps', packageName: 'com.google.android.apps.maps', icon: '🗺️', category: 'Productivity', isLaunchable: true),
+      DeviceApp(
+        name: 'Instagram',
+        packageName: 'com.instagram.android',
+        icon: '📷',
+        category: 'Social',
+        isLaunchable: true,
+      ),
+      DeviceApp(
+        name: 'TikTok',
+        packageName: 'com.zhiliaoapp.musically',
+        icon: '🎵',
+        category: 'Social',
+        isLaunchable: true,
+      ),
+      DeviceApp(
+        name: 'Facebook',
+        packageName: 'com.facebook.katana',
+        icon: '📘',
+        category: 'Social',
+        isLaunchable: true,
+      ),
+      DeviceApp(
+        name: 'Twitter',
+        packageName: 'com.twitter.android',
+        icon: '🐦',
+        category: 'Social',
+        isLaunchable: true,
+      ),
+      DeviceApp(
+        name: 'YouTube',
+        packageName: 'com.google.android.youtube',
+        icon: '📺',
+        category: 'Entertainment',
+        isLaunchable: true,
+      ),
+      DeviceApp(
+        name: 'WhatsApp',
+        packageName: 'com.whatsapp',
+        icon: '💬',
+        category: 'Communication',
+        isLaunchable: true,
+      ),
+      DeviceApp(
+        name: 'Telegram',
+        packageName: 'org.telegram.messenger',
+        icon: '✈️',
+        category: 'Communication',
+        isLaunchable: true,
+      ),
+      DeviceApp(
+        name: 'Reddit',
+        packageName: 'com.reddit.frontpage',
+        icon: '🔶',
+        category: 'Social',
+        isLaunchable: true,
+      ),
+      DeviceApp(
+        name: 'Snapchat',
+        packageName: 'com.snapchat.android',
+        icon: '👻',
+        category: 'Social',
+        isLaunchable: true,
+      ),
+      DeviceApp(
+        name: 'Discord',
+        packageName: 'com.discord',
+        icon: '🎧',
+        category: 'Communication',
+        isLaunchable: true,
+      ),
+      DeviceApp(
+        name: 'Spotify',
+        packageName: 'com.spotify.music',
+        icon: '🎵',
+        category: 'Entertainment',
+        isLaunchable: true,
+      ),
+      DeviceApp(
+        name: 'Netflix',
+        packageName: 'com.netflix.mediaclient',
+        icon: '🎬',
+        category: 'Entertainment',
+        isLaunchable: true,
+      ),
+      DeviceApp(
+        name: 'Chrome',
+        packageName: 'com.android.chrome',
+        icon: '🌐',
+        category: 'Productivity',
+        isLaunchable: true,
+      ),
+      DeviceApp(
+        name: 'Gmail',
+        packageName: 'com.google.android.gm',
+        icon: '📧',
+        category: 'Productivity',
+        isLaunchable: true,
+      ),
+      DeviceApp(
+        name: 'Maps',
+        packageName: 'com.google.android.apps.maps',
+        icon: '🗺️',
+        category: 'Productivity',
+        isLaunchable: true,
+      ),
     ];
   }
 
   /// Refresh device apps list
   Future<void> refreshDeviceApps() async {
     try {
-      // Clear cache
-      final cacheKey = 'device_apps_${DateTime.now().day}';
-      await _deviceAppsBox?.delete(cacheKey);
+      final cacheKey = 'installed_apps_${DateTime.now().day}';
 
-      // Reload apps
+      // Clear cache for the day
+      await _installedAppsBox?.delete(cacheKey);
+
+      // Reload apps (will fetch fresh from installed_apps package)
       await _loadRealDeviceApps();
 
       if (kDebugMode) {
@@ -560,7 +705,9 @@ class AppBlockerService {
 
   /// Get only user-installed apps (excluding system apps)
   List<DeviceApp> getUserApps() {
-    return _deviceApps.where((app) => !app.isSystemApp || app.isLaunchable).toList();
+    return _deviceApps
+        .where((app) => !app.isSystemApp || app.isLaunchable)
+        .toList();
   }
 
   /// Get only launchable apps
@@ -573,11 +720,14 @@ class AppBlockerService {
     if (query.isEmpty) return _deviceApps;
 
     final lowercaseQuery = query.toLowerCase();
-    return _deviceApps.where((app) =>
-    app.name.toLowerCase().contains(lowercaseQuery) ||
-        app.packageName.toLowerCase().contains(lowercaseQuery) ||
-        app.category.toLowerCase().contains(lowercaseQuery)
-    ).toList();
+    return _deviceApps
+        .where(
+          (app) =>
+              app.name.toLowerCase().contains(lowercaseQuery) ||
+              app.packageName.toLowerCase().contains(lowercaseQuery) ||
+              app.category.toLowerCase().contains(lowercaseQuery),
+        )
+        .toList();
   }
 
   // ============================================================================
@@ -662,7 +812,9 @@ class AppBlockerService {
     try {
       if (!Platform.isAndroid) return false;
 
-      final result = await _channel.invokeMethod('request${permission.capitalize()}Permission');
+      final result = await _channel.invokeMethod(
+        'request${permission.capitalize()}Permission',
+      );
       final granted = result?['granted'] ?? false;
 
       // Update permission status
@@ -722,7 +874,10 @@ class AppBlockerService {
 
       _focusModeActive = true;
       await updateSetting('isFocusModeActive', true);
-      await updateSetting('focusStartTime', DateTime.now().millisecondsSinceEpoch);
+      await updateSetting(
+        'focusStartTime',
+        DateTime.now().millisecondsSinceEpoch,
+      );
 
       if (duration != null) {
         await updateSetting('focusDuration', duration.inMinutes);
@@ -826,7 +981,7 @@ class AppBlockerService {
     if (!_isInitialized) await init();
 
     final blockedApp = _blockedApps.firstWhere(
-          (app) => app.packageName == packageName,
+      (app) => app.packageName == packageName,
       orElse: () => BlockedApp(
         name: '',
         packageName: '',
@@ -864,7 +1019,7 @@ class AppBlockerService {
   Future<void> _showBlockingMessage(String packageName) async {
     try {
       final deviceApp = _deviceApps.firstWhere(
-            (app) => app.packageName == packageName,
+        (app) => app.packageName == packageName,
         orElse: () => DeviceApp(
           name: 'Unknown App',
           packageName: packageName,
@@ -901,7 +1056,10 @@ class AppBlockerService {
           'message': 'Great job! Focus session completed! 🎉',
           'timeBlocked': _calculateTimeSaved(),
           'appsBlocked': _blockedApps.where((app) => app.isBlocked).length,
-          'blockedAttempts': _blockedAttempts.values.fold(0, (sum, attempts) => sum + attempts),
+          'blockedAttempts': _blockedAttempts.values.fold(
+            0,
+            (sum, attempts) => sum + attempts,
+          ),
         });
       }
 
@@ -926,7 +1084,7 @@ class AppBlockerService {
 
       // Check if app already exists
       final existingIndex = _blockedApps.indexWhere(
-            (existing) => existing.packageName == app.packageName,
+        (existing) => existing.packageName == app.packageName,
       );
 
       if (existingIndex >= 0) {
@@ -958,11 +1116,13 @@ class AppBlockerService {
 
       // Check if app already exists
       final existingIndex = _blockedApps.indexWhere(
-            (existing) => existing.packageName == deviceApp.packageName,
+        (existing) => existing.packageName == deviceApp.packageName,
       );
 
       final blockedApp = BlockedApp(
-        id: existingIndex >= 0 ? _blockedApps[existingIndex].id : DateTime.now().millisecondsSinceEpoch.toString(),
+        id: existingIndex >= 0
+            ? _blockedApps[existingIndex].id
+            : DateTime.now().millisecondsSinceEpoch.toString(),
         name: deviceApp.name,
         packageName: deviceApp.packageName,
         icon: deviceApp.icon,
@@ -1083,19 +1243,27 @@ class AppBlockerService {
       if (!_isInitialized) await init();
 
       final today = DateTime.now().toIso8601String().split('T')[0];
-      final todayStats = _statsBox?.get('stats_$today', defaultValue: <String, dynamic>{}) ?? <String, dynamic>{};
+      final todayStats =
+          _statsBox?.get('stats_$today', defaultValue: <String, dynamic>{}) ??
+          <String, dynamic>{};
 
-      final blockAttempts = Map<String, int>.from(todayStats['blockAttempts'] ?? {});
+      final blockAttempts = Map<String, int>.from(
+        todayStats['blockAttempts'] ?? {},
+      );
       blockAttempts[packageName] = (blockAttempts[packageName] ?? 0) + 1;
 
       todayStats['blockAttempts'] = blockAttempts;
-      todayStats['timeSaved'] = (todayStats['timeSaved'] ?? 0) + 2; // Assume 2 minutes saved per block
+      todayStats['timeSaved'] =
+          (todayStats['timeSaved'] ?? 0) +
+          2; // Assume 2 minutes saved per block
 
       await _statsBox?.put('stats_$today', todayStats);
       _blockedAttempts[packageName] = blockAttempts[packageName]!;
 
       if (kDebugMode) {
-        print('📊 Recorded block attempt: $packageName (${blockAttempts[packageName]} today)');
+        print(
+          '📊 Recorded block attempt: $packageName (${blockAttempts[packageName]} today)',
+        );
       }
     }, context: 'Record block attempt');
   }
@@ -1119,78 +1287,103 @@ class AppBlockerService {
   /// Get today's statistics
   Future<Map<String, dynamic>> getTodayStatistics() async {
     return await ErrorHandler.handleAsyncError(() async {
-      if (!_isInitialized) await init();
+          if (!_isInitialized) await init();
 
-      final today = DateTime.now().toIso8601String().split('T')[0];
-      final todayStats = _statsBox?.get('stats_$today', defaultValue: <String, dynamic>{}) ?? <String, dynamic>{};
-      final blockAttempts = Map<String, int>.from(todayStats['blockAttempts'] ?? {});
+          final today = DateTime.now().toIso8601String().split('T')[0];
+          final todayStats =
+              _statsBox?.get(
+                'stats_$today',
+                defaultValue: <String, dynamic>{},
+              ) ??
+              <String, dynamic>{};
+          final blockAttempts = Map<String, int>.from(
+            todayStats['blockAttempts'] ?? {},
+          );
 
-      return {
-        'blockAttempts': blockAttempts,
-        'timeSaved': todayStats['timeSaved'] ?? 0,
-        'totalBlocks': blockAttempts.values.fold(0, (sum, attempts) => sum + attempts),
-        'focusSessionsCompleted': todayStats['focusSessionsCompleted'] ?? 0,
-        'mostBlockedApp': _getMostBlockedApp(blockAttempts),
-        'currentStreak': _settings['currentStreak'] ?? 0,
-      };
-    }, context: 'Get today statistics') ?? {
-      'blockAttempts': <String, int>{},
-      'timeSaved': 0,
-      'totalBlocks': 0,
-      'focusSessionsCompleted': 0,
-      'mostBlockedApp': null,
-      'currentStreak': 0,
-    };
+          return {
+            'blockAttempts': blockAttempts,
+            'timeSaved': todayStats['timeSaved'] ?? 0,
+            'totalBlocks': blockAttempts.values.fold(
+              0,
+              (sum, attempts) => sum + attempts,
+            ),
+            'focusSessionsCompleted': todayStats['focusSessionsCompleted'] ?? 0,
+            'mostBlockedApp': _getMostBlockedApp(blockAttempts),
+            'currentStreak': _settings['currentStreak'] ?? 0,
+          };
+        }, context: 'Get today statistics') ??
+        {
+          'blockAttempts': <String, int>{},
+          'timeSaved': 0,
+          'totalBlocks': 0,
+          'focusSessionsCompleted': 0,
+          'mostBlockedApp': null,
+          'currentStreak': 0,
+        };
   }
 
   /// Get weekly statistics
   Future<Map<String, dynamic>> getWeeklyStatistics() async {
     return await ErrorHandler.handleAsyncError(() async {
-      if (!_isInitialized) await init();
+          if (!_isInitialized) await init();
 
-      final now = DateTime.now();
-      final weekStart = now.subtract(Duration(days: now.weekday - 1));
+          final now = DateTime.now();
+          final weekStart = now.subtract(Duration(days: now.weekday - 1));
 
-      Map<String, dynamic> weeklyStats = {
-        'totalBlocks': 0,
-        'dailyBlocks': <String, int>{},
-        'topBlockedApps': <String, int>{},
-        'totalTimeSaved': 0,
-        'averageFocusTime': 0,
-        'streak': await _calculateStreak(),
-        'productivity': 0,
-      };
+          Map<String, dynamic> weeklyStats = {
+            'totalBlocks': 0,
+            'dailyBlocks': <String, int>{},
+            'topBlockedApps': <String, int>{},
+            'totalTimeSaved': 0,
+            'averageFocusTime': 0,
+            'streak': await _calculateStreak(),
+            'productivity': 0,
+          };
 
-      for (int i = 0; i < 7; i++) {
-        final day = weekStart.add(Duration(days: i));
-        final dayKey = day.toIso8601String().split('T')[0];
-        final dayStats = _statsBox?.get('stats_$dayKey', defaultValue: <String, dynamic>{}) ?? <String, dynamic>{};
+          for (int i = 0; i < 7; i++) {
+            final day = weekStart.add(Duration(days: i));
+            final dayKey = day.toIso8601String().split('T')[0];
+            final dayStats =
+                _statsBox?.get(
+                  'stats_$dayKey',
+                  defaultValue: <String, dynamic>{},
+                ) ??
+                <String, dynamic>{};
 
-        final dayBlocks = Map<String, int>.from(dayStats['blockAttempts'] ?? {});
-        final dayTotal = dayBlocks.values.fold(0, (sum, attempts) => sum + attempts);
+            final dayBlocks = Map<String, int>.from(
+              dayStats['blockAttempts'] ?? {},
+            );
+            final dayTotal = dayBlocks.values.fold(
+              0,
+              (sum, attempts) => sum + attempts,
+            );
 
-        weeklyStats['dailyBlocks'][dayKey] = dayTotal;
-        weeklyStats['totalBlocks'] += dayTotal;
-        weeklyStats['totalTimeSaved'] += dayStats['timeSaved'] ?? 0;
+            weeklyStats['dailyBlocks'][dayKey] = dayTotal;
+            weeklyStats['totalBlocks'] += dayTotal;
+            weeklyStats['totalTimeSaved'] += dayStats['timeSaved'] ?? 0;
 
-        dayBlocks.forEach((app, blocks) {
-          weeklyStats['topBlockedApps'][app] = (weeklyStats['topBlockedApps'][app] ?? 0) + blocks;
-        });
-      }
+            dayBlocks.forEach((app, blocks) {
+              weeklyStats['topBlockedApps'][app] =
+                  (weeklyStats['topBlockedApps'][app] ?? 0) + blocks;
+            });
+          }
 
-      // Calculate productivity score
-      weeklyStats['productivity'] = _calculateProductivityScore(weeklyStats);
+          // Calculate productivity score
+          weeklyStats['productivity'] = _calculateProductivityScore(
+            weeklyStats,
+          );
 
-      return weeklyStats;
-    }, context: 'Get weekly statistics') ?? {
-      'totalBlocks': 0,
-      'dailyBlocks': <String, int>{},
-      'topBlockedApps': <String, int>{},
-      'totalTimeSaved': 0,
-      'averageFocusTime': 0,
-      'streak': 0,
-      'productivity': 0,
-    };
+          return weeklyStats;
+        }, context: 'Get weekly statistics') ??
+        {
+          'totalBlocks': 0,
+          'dailyBlocks': <String, int>{},
+          'topBlockedApps': <String, int>{},
+          'totalTimeSaved': 0,
+          'averageFocusTime': 0,
+          'streak': 0,
+          'productivity': 0,
+        };
   }
 
   /// Get most blocked app from attempts map
@@ -1202,7 +1395,7 @@ class AppBlockerService {
 
     final mostBlockedPackage = sortedEntries.first.key;
     final deviceApp = _deviceApps.firstWhere(
-          (app) => app.packageName == mostBlockedPackage,
+      (app) => app.packageName == mostBlockedPackage,
       orElse: () => DeviceApp(
         name: 'Unknown App',
         packageName: mostBlockedPackage,
@@ -1217,7 +1410,9 @@ class AppBlockerService {
   /// Calculate current focus streak
   Future<int> _calculateStreak() async {
     try {
-      final streakData = _settingsBox?.get('streak', defaultValue: <String, dynamic>{}) ?? <String, dynamic>{};
+      final streakData =
+          _settingsBox?.get('streak', defaultValue: <String, dynamic>{}) ??
+          <String, dynamic>{};
       return streakData['currentStreak'] ?? 0;
     } catch (e) {
       return 0;
@@ -1245,7 +1440,10 @@ class AppBlockerService {
 
   /// Calculate time saved during current session
   int _calculateTimeSaved() {
-    final totalAttempts = _blockedAttempts.values.fold(0, (sum, attempts) => sum + attempts);
+    final totalAttempts = _blockedAttempts.values.fold(
+      0,
+      (sum, attempts) => sum + attempts,
+    );
     return totalAttempts * 2; // Assume 2 minutes saved per blocked attempt
   }
 
@@ -1297,14 +1495,21 @@ class AppBlockerService {
   // ============================================================================
 
   /// Activate emergency override
-  Future<void> activateEmergencyOverride({Duration duration = const Duration(minutes: 15)}) async {
+  Future<void> activateEmergencyOverride({
+    Duration duration = const Duration(minutes: 15),
+  }) async {
     try {
       final expiryTime = DateTime.now().add(duration);
       await updateSetting('isEmergencyOverrideActive', true);
-      await updateSetting('emergencyOverrideExpiry', expiryTime.millisecondsSinceEpoch);
+      await updateSetting(
+        'emergencyOverrideExpiry',
+        expiryTime.millisecondsSinceEpoch,
+      );
 
       if (kDebugMode) {
-        print('🚨 Emergency override activated for ${duration.inMinutes} minutes');
+        print(
+          '🚨 Emergency override activated for ${duration.inMinutes} minutes',
+        );
       }
     } catch (e) {
       if (kDebugMode) {
@@ -1408,7 +1613,10 @@ class AppBlockerService {
       'remainingMinutes': (duration ?? 25) - elapsed.inMinutes,
       'isActive': _focusModeActive,
       'blockedApps': _blockedApps.where((app) => app.isBlocked).length,
-      'blockedAttempts': _blockedAttempts.values.fold(0, (sum, attempts) => sum + attempts),
+      'blockedAttempts': _blockedAttempts.values.fold(
+        0,
+        (sum, attempts) => sum + attempts,
+      ),
     };
   }
 
@@ -1494,7 +1702,10 @@ class AppBlockerService {
   }
 
   /// Calculate focus score based on statistics
-  int _calculateFocusScore(Map<String, dynamic> todayStats, Map<String, dynamic> weeklyStats) {
+  int _calculateFocusScore(
+    Map<String, dynamic> todayStats,
+    Map<String, dynamic> weeklyStats,
+  ) {
     try {
       final todayBlocks = (todayStats['totalBlocks'] as num?)?.toInt() ?? 0;
       final streak = (weeklyStats['streak'] as num?)?.toInt() ?? 0;
@@ -1502,9 +1713,15 @@ class AppBlockerService {
 
       // Advanced scoring algorithm
       int score = 0;
-      score += (todayBlocks * 5).clamp(0, 50); // Max 50 points for today's blocks
+      score += (todayBlocks * 5).clamp(
+        0,
+        50,
+      ); // Max 50 points for today's blocks
       score += (streak * 10).clamp(0, 30); // Max 30 points for streak
-      score += (weeklyBlocks ~/ 7 * 3).clamp(0, 20); // Max 20 points for average weekly blocks
+      score += (weeklyBlocks ~/ 7 * 3).clamp(
+        0,
+        20,
+      ); // Max 20 points for average weekly blocks
 
       return score.clamp(0, 100);
     } catch (e) {
@@ -1583,14 +1800,24 @@ class AppBlockerService {
   String _getMostProductiveDay(Map<String, int> dailyBlocks) {
     if (dailyBlocks.isEmpty) return 'No data';
 
-    final maxEntry = dailyBlocks.entries.reduce((a, b) => a.value > b.value ? a : b);
+    final maxEntry = dailyBlocks.entries.reduce(
+      (a, b) => a.value > b.value ? a : b,
+    );
     final date = DateTime.parse(maxEntry.key);
     return '${_getDayName(date.weekday)} (${maxEntry.value} blocks)';
   }
 
   /// Get day name from weekday number
   String _getDayName(int weekday) {
-    const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+    const days = [
+      'Monday',
+      'Tuesday',
+      'Wednesday',
+      'Thursday',
+      'Friday',
+      'Saturday',
+      'Sunday',
+    ];
     return days[weekday - 1];
   }
 
@@ -1602,8 +1829,12 @@ class AppBlockerService {
     final recent = values.sublist(values.length - 3);
     final earlier = values.sublist(0, values.length - 3);
 
-    final recentAvg = recent.isEmpty ? 0 : recent.reduce((a, b) => a + b) / recent.length;
-    final earlierAvg = earlier.isEmpty ? 0 : earlier.reduce((a, b) => a + b) / earlier.length;
+    final recentAvg = recent.isEmpty
+        ? 0
+        : recent.reduce((a, b) => a + b) / recent.length;
+    final earlierAvg = earlier.isEmpty
+        ? 0
+        : earlier.reduce((a, b) => a + b) / earlier.length;
 
     if (recentAvg > earlierAvg * 1.1) return 'Improving ↗️';
     if (recentAvg < earlierAvg * 0.9) return 'Declining ↘️';
@@ -1616,14 +1847,18 @@ class AppBlockerService {
 
     final values = dailyBlocks.values.toList();
     final avg = values.reduce((a, b) => a + b) / values.length;
-    final variance = values.map((v) => (v - avg) * (v - avg)).reduce((a, b) => a + b) / values.length;
+    final variance =
+        values.map((v) => (v - avg) * (v - avg)).reduce((a, b) => a + b) /
+        values.length;
 
     // Convert variance to consistency score (0-1, higher is more consistent)
     return (1 / (1 + variance)).clamp(0.0, 1.0);
   }
 
   /// Get top distracting apps
-  List<Map<String, dynamic>> _getTopDistractingApps(Map<String, dynamic> weeklyStats) {
+  List<Map<String, dynamic>> _getTopDistractingApps(
+    Map<String, dynamic> weeklyStats,
+  ) {
     final topApps = Map<String, int>.from(weeklyStats['topBlockedApps'] ?? {});
 
     final sortedApps = topApps.entries.toList()
@@ -1631,7 +1866,7 @@ class AppBlockerService {
 
     return sortedApps.take(5).map((entry) {
       final deviceApp = _deviceApps.firstWhere(
-            (app) => app.packageName == entry.key,
+        (app) => app.packageName == entry.key,
         orElse: () => DeviceApp(
           name: 'Unknown App',
           packageName: entry.key,
@@ -1689,7 +1924,9 @@ class AppBlockerService {
       await clearAllData();
 
       // Import blocked apps
-      final blockedAppsData = List<Map<String, dynamic>>.from(data['blockedApps'] ?? []);
+      final blockedAppsData = List<Map<String, dynamic>>.from(
+        data['blockedApps'] ?? [],
+      );
       for (final appData in blockedAppsData) {
         try {
           final blockedApp = BlockedApp.fromJson(appData);
@@ -1702,7 +1939,9 @@ class AppBlockerService {
       }
 
       // Import settings
-      final importedSettings = Map<String, dynamic>.from(data['settings'] ?? {});
+      final importedSettings = Map<String, dynamic>.from(
+        data['settings'] ?? {},
+      );
       for (final entry in importedSettings.entries) {
         await updateSetting(entry.key, entry.value);
       }
@@ -1711,7 +1950,9 @@ class AppBlockerService {
       final statisticsData = data['statistics'] as Map<String, dynamic>?;
       if (statisticsData != null) {
         // Import daily statistics
-        final dailyBlocks = Map<String, int>.from(statisticsData['dailyBlocks'] ?? {});
+        final dailyBlocks = Map<String, int>.from(
+          statisticsData['dailyBlocks'] ?? {},
+        );
         for (final entry in dailyBlocks.entries) {
           final dayStats = {
             'blockAttempts': <String, int>{},
